@@ -1,0 +1,172 @@
+Dim sHistorico, sUpdate
+'Define a semana com o histórico de dados
+sHistorico = InputBox("Qual é a semana que contém o histórico? (yyyyww)")
+'Calcula a semana de update do histórico
+if right(sHistorico, 2) = "52" then
+	sUpdate = left(sHistorico, 2) & CStr(CDbl(Mid(sHistorico, 3, 2))+1) & "01"
+else
+	sUpdate = CStr(CDbl(sHistorico) + 1)
+end if
+
+'msgbox(supdate)
+
+'Copia os ficheiros master
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+objFSO.copyfolder "c:\agbpw\data\wpol\masters", "c:\agbpw\masters"
+
+'Define a directoria onde se encontra o histórico
+dirHistorico = "O:\ROC Production\UK Data Production\14. WPOL\2. Final datafiles\" & left(sHistorico, 4) & "W" & right(sHistorico, 2)
+'msgbox(dirHistorico)
+
+'Cria o objecto shell
+Set oShell = WScript.CreateObject ("WScript.Shell")
+
+'Descomprime o ficheiro com o update
+comando = """C:\Program Files\7-Zip\7z.exe""" & " x " & """O:\ROC Production\UK Data Production\14. WPOL\1. Received datafiles\""" & right(sUpdate, 3) & ".zip" & " -o" & """C:\agbpw\data\wpol\temp"""
+'msgbox(comando)
+oShell.run comando, WaitUntilFinished
+
+call EsperarUnzip
+
+'Para cada ficheiro na directoria do histórico (...)
+for each ficheiro in objFSO.GetFolder(dirHistorico).Files
+'msgbox(ficheiro)
+
+'(...) define o ficheiro de update, que já está na directoria de construção
+ficheiroUpdate = "C:\agbpw\data\wpol\temp\" & right(sUpdate, 3) & "\" & left(right(ficheiro,8), 4) & "\ActivityL001." & right(sUpdate, 3)
+'msgbox(ficheiroUpdate)
+'msgbox(left(ficheiroUpdate, 32))
+
+	'Verifica se existe uma folder com o update (...)
+	if objFSO.FolderExists(left(ficheiroUpdate, 32)) then
+		
+		existeUpdate = True
+		
+		'(...) e se o ficheiro de update tem dados ou está a 0 kb
+		if CDbl(objFSO.GetFile(ficheiroUpdate).Size) > 0 then
+			updateComDados = True
+		else
+			updateComDados = False
+		end if
+		
+		else
+		
+		existeUpdate = False
+		
+	end if
+
+	'(...)e caso exista update
+	if existeUpdate = True then
+	'Permite restringir a construção a uma base em particular, tendo em conta os ultimos dois caracteres da pasta
+	'and cint(left(right(ficheiro, 6),2)) = 10 then
+
+		'msgbox("Entrei no loop com a base " & right(ficheiro, 6))
+		
+		'Descomprime o ficheiro do histórico
+		comando = """C:\Program Files\7-Zip\7z.exe""" & " x " & """O:\ROC Production\UK Data Production\14. WPOL\2. Final datafiles\""" & left(sHistorico, 4) & "W" & right(sHistorico, 2) & right(ficheiro, 9) & " -o" & """C:\agbpw\data\wpol\orders"""
+		oShell.run comando, WaitUntilFinished
+		
+		call EsperarUnzip
+		
+		'Copia os ficheiros da pasta com o update para a pasta com o historico
+		origem = "C:\agbpw\data\wpol\temp\" & right(sUpdate, 3) & "\" & left(right(ficheiro,8), 4) & "\*.*"
+		'msgbox(origem)
+		destino = "C:\agbpw\data\wpol\orders\" & left(right(ficheiro,8), 4)
+		'msgbox(destino)
+		objFSO.CopyFile origem, destino
+
+		'Cria o ficheiro necessário para correr o update do agbpw.exe
+		set outFile=objFSO.CreateTextFile("C:\agbpw\xorders.lst")
+		outfile.writeLine left(right(ficheiro,8), 4) & ",YYYY,S," & sUpdate & ",UPDATE,CURRENT,C:\AGBPW\DATA\WPOL\ORDERS," & left(right(ficheiro,8), 4) & "," & left(right(ficheiro,8), 4) & "INFO." & right(sUpdate, 3)
+		outfile.Close
+		
+		'Se a folder do update tiver um ficheiro de update com dados (> 0 Kb)
+		if updateComDados = True then
+			
+			comando = "C:\agbpw\agbpw.exe C:\agbpw\xorders.lst /exit"
+			'msgbox(comando)
+			oShell.run comando, WaitUntilFinished
+
+			call EsperarAgbpw
+			
+		End if 
+		
+		'msgbox("Saí do loop com a base " & right(ficheiro, 6))
+		
+		'Comprimir a pasta com o historico e o update já feito para a rede
+		comando = """C:\Program Files\7-Zip\7z.exe""" & " a " & """O:\ROC Production\UK Data Production\14. WPOL\2. Final datafiles\""" & left(sUpdate, 4) & "W" & right(sUpdate, 2) & right(ficheiro, 9) & " " & """C:\agbpw\data\wpol\orders\""" & left(right(ficheiro,8), 4)  
+		'msgbox(comando)
+		oShell.run comando, WaitUntilFinished
+	
+		call EsperarUnzip
+		
+		'Apagar a pasta que se acabou de comprimir da area de construção local
+		historicoUpdate = "C:\agbpw\data\wpol\orders\" & left(right(ficheiro,8), 4)
+		objFSO.deleteFolder historicoUpdate
+	
+	else
+	
+		'Se houver uma pasta de histórico mas não houver uma pasta de update
+		if existeUpdate = False then
+				
+		comando = """C:\Program Files\7-Zip\7z.exe""" & " x " & """O:\ROC Production\UK Data Production\14. WPOL\2. Final datafiles\""" & left(sHistorico, 4) & "W" & right(sHistorico, 2) & right(ficheiro, 9) & " -o" & """C:\agbpw\data\wpol\orders"""
+		oShell.run comando, WaitUntilFinished
+		
+		call EsperarUnzip
+		
+		'Descomprimir ficheiro historico
+		comando = """C:\Program Files\7-Zip\7z.exe""" & " a " & """O:\ROC Production\UK Data Production\14. WPOL\2. Final datafiles\""" & left(sUpdate, 4) & "W" & right(sUpdate, 2) & right(ficheiro, 9) & " " & """C:\agbpw\data\wpol\orders\""" & left(right(ficheiro,8), 4)  
+		'msgbox(comando)
+		oShell.run comando, WaitUntilFinished
+	
+		call EsperarUnzip
+		
+		'Voltar a comprimir ficheiro historico (que não foi actualizado porque não havia update, no entanto, pode haver de futuro): no fundo é só para alterar a data do zip
+		historicoUpdate = "C:\agbpw\data\wpol\orders\" & left(right(ficheiro,8), 4)
+		objFSO.deleteFolder historicoUpdate
+	
+		end if 
+		
+	end if
+
+existeUpdate = False
+updateComDados = False
+
+next
+
+'Apagar os ficheiros masters
+objFSO.DeleteFile("C:\agbpw\masters\*.*")
+
+'########
+'FUNCOES#
+'########
+
+'Função necessária para que o vbs não continue a correr sem que o processo de descompressão termina
+Function EsperarUnzip()
+
+strProcess = "7z.exe"
+Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+Set colProcesses = objWMIService.ExecQuery ("Select * from Win32_Process Where Name = '"& strProcess &"'")
+
+Do While colProcesses.Count > 0
+Set colProcesses = objWMIService.ExecQuery ("Select * from Win32_Process Where Name = '"& strProcess &"'")
+Wscript.Sleep(1000) 'Sleep 1 second
+'msgbox colProcesses.count 'optional to show the loop works
+Loop
+
+End Function
+
+'Função necessária para que o vbs não continue a correr sem que o processo do agbpw termine
+Function EsperarAgbpw()
+
+strProcess = "agbpw.exe"
+Set objWMIService = GetObject("winmgmts:{impersonationLevel=impersonate}!\\.\root\cimv2")
+Set colProcesses = objWMIService.ExecQuery ("Select * from Win32_Process Where Name = '"& strProcess &"'")
+
+Do While colProcesses.Count > 0
+Set colProcesses = objWMIService.ExecQuery ("Select * from Win32_Process Where Name = '"& strProcess &"'")
+Wscript.Sleep(1000) 'Sleep 1 second
+'msgbox colProcesses.count 'optional to show the loop works
+Loop
+
+End Function
